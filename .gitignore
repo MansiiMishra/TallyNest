@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+.env.local
+.env.*.local
+*.tsbuildinfo
+
+# Product requirements source document
+Order & Payment Tracker V1 Spec.docx
