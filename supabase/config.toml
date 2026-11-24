@@ -8,11 +8,11 @@ extra_search_path = ["public", "extensions"]
 [auth]
 enabled = true
 site_url = "http://127.0.0.1:3000"
-enable_signup = false
+enable_signup = true
 enable_anonymous_sign_ins = false
 
 [auth.email]
-enable_signup = false
+enable_signup = true
 enable_confirmations = true
 otp_length = 6
 otp_expiry = 600

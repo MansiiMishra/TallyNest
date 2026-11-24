@@ -1,5 +1,5 @@
 -- Run with: supabase test db
--- Exercises the first security boundary before financial RPCs are introduced.
+-- Exercises tenant isolation for authenticated business reads and writes.
 begin;
 
 create extension if not exists pgtap with schema extensions;

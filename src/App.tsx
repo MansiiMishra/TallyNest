@@ -8,7 +8,7 @@ import type { Business, ClosureRule, Customer, CustomerBalance, Order, Slot } fr
 import {
   AuthScreen, BookingDialog, CalendarScreen, ClosureDialog, CustomerDialog, CustomerScreen,
   CustomerDetailScreen, OrderDialog, PaymentDialog, RemindersScreen, SettingsScreen,
-  TodayScreen, type AppPage, type BusinessData, type BookingForm, type OrderForm,
+  TodayScreen, WorkspaceSetupScreen, type AppPage, type BusinessData, type BookingForm, type OrderForm,
 } from './screens'
 
 const navItems: { label: AppPage; icon: typeof Home }[] = [
@@ -21,6 +21,7 @@ function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [authReady, setAuthReady] = useState(false)
   const [businessId, setBusinessId] = useState<string | null>(null)
+  const [membershipReady, setMembershipReady] = useState(false)
   const [data, setData] = useState<BusinessData | null>(null)
   const [loading, setLoading] = useState(false)
   const [page, setPage] = useState<AppPage>('Today')
@@ -47,11 +48,15 @@ function App() {
 
   useEffect(() => {
     let cancelled = false
-    if (!session) { setBusinessId(null); setData(null); return }
+    if (!session) { setBusinessId(null); setData(null); setMembershipReady(false); return }
+    setMembershipReady(false)
     void activeBusinessForUser(session.user.id).then(id => {
-      if (!cancelled) setBusinessId(id)
+      if (!cancelled) { setBusinessId(id); setMembershipReady(true) }
     }).catch(error => {
-      if (!cancelled) setNotice({ kind: 'error', text: error instanceof Error ? error.message : 'Could not check business access.' })
+      if (!cancelled) {
+        setNotice({ kind: 'error', text: error instanceof Error ? error.message : 'Could not check business access.' })
+        setMembershipReady(true)
+      }
     })
     return () => { cancelled = true }
   }, [session])
@@ -97,11 +102,25 @@ function App() {
     event.preventDefault()
     if (!supabase) return false
     setWriting(true)
-    const { error } = await supabase.auth.signInWithOtp({ email: email.trim(), options: { emailRedirectTo: window.location.origin, shouldCreateUser: false } })
+    const { error } = await supabase.auth.signInWithOtp({ email: email.trim(), options: { emailRedirectTo: window.location.origin, shouldCreateUser: true } })
     setWriting(false)
     if (error) { setNotice({ kind: 'error', text: error.message }); return false }
-    setNotice({ kind: 'success', text: 'Sign-in link sent. Open it on this device to continue.' })
+    setNotice({ kind: 'success', text: 'Secure sign-in link sent. Open it on this device to continue.' })
     return true
+  }
+
+  async function createWorkspace(event: FormEvent<HTMLFormElement>, name: string) {
+    event.preventDefault()
+    if (!supabase) return
+    setWriting(true)
+    try {
+      const id = await rpc<string>('create_business_for_current_user', { p_name: name.trim() })
+      setBusinessId(id)
+      setPage('Today')
+      setNotice({ kind: 'success', text: 'Your workspace is ready.' })
+    } catch (error) {
+      setNotice({ kind: 'error', text: error instanceof Error ? error.message : 'Could not create your business.' })
+    } finally { setWriting(false) }
   }
 
   async function signOut() {
@@ -238,7 +257,9 @@ function App() {
 
   if (!authReady) return <div className="loading-screen"><span className="loading-mark"><Cookie size={24}/></span><p>Opening your kitchen…</p></div>
   if (!session) return <AuthScreen configured={isSupabaseConfigured} notice={notice} busy={writing} onSubmit={signIn}/>
-  if (!businessId && !loading) return <div className="loading-screen"><span className="loading-mark"><Cookie size={24}/></span><h2>No active business invitation</h2><p>Ask your business administrator to finish setting up your account, then refresh.</p><button className="quiet-button" onClick={() => void activeBusinessForUser(session.user.id).then(setBusinessId)}>Try again</button><button className="quiet-button" onClick={() => void signOut()}>Sign out</button></div>
+  if (!membershipReady) return <div className="loading-screen"><span className="loading-mark"><Cookie size={24}/></span><p>Opening your workspace…</p></div>
+  if (!businessId) return <WorkspaceSetupScreen email={session.user.email ?? ''} notice={notice} busy={writing} onSubmit={createWorkspace} onSignOut={() => void signOut()}/>
+  if (!data && loading) return <div className="loading-screen"><span className="loading-mark"><Cookie size={24}/></span><p>Opening your workspace…</p></div>
 
   const business = data?.business
   const customerMap = new Map(customers.map(customer => [customer.id, customer]))
@@ -253,11 +274,12 @@ function App() {
       <a className="brand" href="#today" onClick={() => setPage('Today')}><span className="brand-icon"><Cookie size={22}/></span><span><strong>TallyNest</strong></span></a>
       <div className="business-switcher"><span className="business-avatar">{business?.name?.[0]?.toUpperCase() ?? 'H'}</span><span className="business-name"><strong>{business?.name ?? 'Loading…'}</strong><small>Business workspace</small></span></div>
       <span className="nav-caption">WORKSPACE</span>
-      <nav className="main-nav" aria-label="Main navigation">{navItems.map(({ label, icon: Icon }) => <button key={label} className={`nav-link ${page === label || (page === 'Customer Detail' && label === 'Customers') ? 'active' : ''}`} onClick={() => setPage(label)}><Icon size={18} strokeWidth={1.8}/><span>{label}</span></button>)}</nav>
+      <nav className="main-nav" aria-label="Main navigation">{navItems.map(({ label, icon: Icon }) => <button key={label} className={`nav-link ${page === label || (page === 'Customer Detail' && label === 'Customers') ? 'active' : ''}`} aria-current={page === label || (page === 'Customer Detail' && label === 'Customers') ? 'page' : undefined} onClick={() => setPage(label)}><Icon size={18} strokeWidth={1.8}/><span>{label}</span></button>)}</nav>
       <div className="sidebar-spacer"/>
       <div className="help-card"><span className="help-icon"><CircleHelp size={16}/></span><strong>Your order book, made simple.</strong><p>Changes save online and follow you across devices.</p><button onClick={() => setPage('Settings')}>Business settings</button></div>
       <div className="profile-row"><span className="profile-avatar">{session.user.email?.[0]?.toUpperCase() ?? 'Y'}</span><span className="profile-name"><strong>{session.user.email?.split('@')[0] ?? 'Your account'}</strong><small>{session.user.email}</small></span><button className="icon-button" aria-label="Sign out" onClick={() => void signOut()}><LogOut size={17}/></button></div>
     </aside>
+    <nav className="mobile-nav" aria-label="Main navigation">{navItems.map(({ label, icon: Icon }) => <button key={label} className={`mobile-nav-link ${page === label || (page === 'Customer Detail' && label === 'Customers') ? 'active' : ''}`} aria-current={page === label || (page === 'Customer Detail' && label === 'Customers') ? 'page' : undefined} onClick={() => setPage(label)}><Icon size={19} strokeWidth={1.9}/><span>{label}</span></button>)}</nav>
     <main className="main-area">
       <header className="topbar"><div className="mobile-brand"><Cookie size={20}/><strong>TallyNest</strong></div><div className="breadcrumb">Workspace <span>›</span> <strong>{page}</strong></div><div className="topbar-actions"><span className="online-badge"><span/> Online workspace</span><button className="icon-button" aria-label="Help" onClick={() => setPage('Settings')}><CircleHelp size={18}/></button></div></header>
       <section className="page-content">
